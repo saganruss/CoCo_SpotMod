@@ -1,0 +1,210 @@
+/*CoCo, the colony counter ImageJ macro (Spotting Mod)
+ * author: Jia Xuan Leong
+ * modified by: Sagan Russ
+ */
+
+
+//global variables
+var dir;
+var prominence = 20;
+var samplename = "sample";
+var dilution = 1;
+var colonyno;
+var rows = 10;
+var cols = 8;
+
+
+macro "Process Image [f1]" {
+	dir = getDirectory("image");
+	img = getTitle();
+	setTool("rectangle");
+	run("Select All");
+
+	Dialog.createNonBlocking("");
+	Dialog.addMessage("Select the area of the plate. Input the \nnumber of rows and columns of spots to analyze. \nThen, press \"OK\" to crop the image.");
+	Dialog.addNumber("Number of Rows", rows);
+	Dialog.addNumber("Number of Columns", cols);
+	Dialog.show();
+
+	rows = Dialog.getNumber();
+	cols = Dialog.getNumber();
+
+	run("Crop"); 
+	run("Invert");
+	run("Subtract Background...", "rolling=30");
+	run("Mean...", "radius=1");
+	run("Enhance Contrast...", "saturated=0.3 normalize");
+	run("Select None");
+	setTool("rectangle");
+	print("\\Clear");
+	print("sample name, number of colonies"); 
+}
+
+
+macro "Auto Count Colonies [f2]" { 
+	full_image_id = getImageID(); 
+	title = getTitle(); 
+	Dialog.createNonBlocking("Define Prominence");
+	Dialog.addNumber("Prominence for Finding Maxima", prominence);
+	Dialog.show();
+	
+	prominence = Dialog.getNumber();
+
+	getLocationAndSize(locX, locY, sizeW, sizeH); 
+	width = getWidth(); 
+	height = getHeight(); 
+	tileWidth = width / cols; 
+	tileHeight = height / rows; 
+	for (x = 0; x < cols; x++) { 
+	 offsetX = x * width / cols; 
+	for (y = 0; y < rows; y++) { 
+	 offsetY = y * height / rows; 
+
+	selectImage(full_image_id); 
+	 call("ij.gui.ImageWindow.setNextLocation", locX + offsetX, locY + offsetY); 
+	tileTitle = title + " [" + x + "," + y + "]"; 
+	 run("Duplicate...", "title=" + tileTitle); 
+	makeRectangle(offsetX, offsetY, tileWidth, tileHeight); 
+	 run("Crop");
+ 
+	 curr_image_id = getImageID();
+	 selectImage(curr_image_id);
+	 AutoCountSpot();
+		
+	} 
+	} 
+	run("Reset CoCo [r]");
+
+}
+
+macro "Precision Count Colonies [f3]" {
+	full_image_id = getImageID(); 
+	title = getTitle(); 
+	getLocationAndSize(locX, locY, sizeW, sizeH); 
+	width = getWidth(); 
+	height = getHeight(); 
+	tileWidth = width / cols; 
+	tileHeight = height / rows; 
+	for (x = 0; x < cols; x++) { 
+	 offsetX = x * width / cols; 
+	for (y = 0; y < rows; y++) { 
+	 offsetY = y * height / rows; 
+
+	selectImage(full_image_id); 
+	 call("ij.gui.ImageWindow.setNextLocation", locX + offsetX, locY + offsetY); 
+	tileTitle = title + " [" + x + "," + y + "]"; 
+	 run("Duplicate...", "title=" + tileTitle); 
+	makeRectangle(offsetX, offsetY, tileWidth, tileHeight); 
+	 run("Crop");
+ 
+	 curr_image_id = getImageID();
+	 selectImage(curr_image_id);
+	 PrecisionCountSpot();
+		
+	} 
+	} 
+	run("Reset CoCo [r]");
+}
+
+function AutoCountSpot() {
+	run("Select None");
+	setTool("rectangle");
+	
+	id = getImageID(); 
+	run("Find Maxima...", "prominence=" + prominence + " exclude output=[Point Selection]");
+	run("Clear Results");
+	run("Measure");
+	
+	colonyno = Table.size("Results");
+
+	if (colonyno == 1) {
+		selectImage(id);
+		setTool("rectangle");
+		run("Select All");
+		run("Set Measurements...", "standard redirect=None decimal=3");
+		run("Measure");
+		var std_dev = Table.get("StdDev", 1);
+	
+		if (std_dev > 0 && std_dev < 4)
+			colonyno = 0;
+	}
+
+	print(samplename + " " + dilution + ", " + colonyno); 
+
+	dilution += 1;
+	close("Results");
+	selectImage(id); 
+	close(); 
+}
+
+function PrecisionCountSpot() {
+	run("Select None");
+	setTool("rectangle");
+
+	Dialog.createNonBlocking("Define Sample");
+	Dialog.addNumber("Prominence for Finding Maxima", prominence);
+	Dialog.addString("Sample Name", samplename);
+	Dialog.addNumber("Dilution Number", dilution);
+	Dialog.show();
+	
+	prominence = Dialog.getNumber();
+	samplename = Dialog.getString();
+	dilution = Dialog.getNumber();
+	
+	id = getImageID(); 
+	run("Find Maxima...", "prominence=" + prominence + " exclude output=[Point Selection]");
+	run("Point Tool...", "type=Cross color=Red size=Small");
+	setTool("multipoint");
+	run("Set Measurements...", "  redirect=None decimal=5");
+	run("Clear Results");
+	run("Measure");
+
+	colonyno = Table.size("Results");
+
+	if (colonyno == 1) {
+		run("Select None");
+		selectImage(id);
+		setTool("rectangle");
+		run("Select All");
+		run("Set Measurements...", "standard redirect=None decimal=3");
+		run("Measure");
+		var std_dev = Table.get("StdDev", 1);
+	
+		if (std_dev > 0 && std_dev < 4) {
+			colonyno = 0;
+	 		run("Select None");
+		}
+		else {
+			id = getImageID(); 
+			run("Find Maxima...", "prominence=" + prominence + " exclude output=[Point Selection]");
+			run("Point Tool...", "type=Cross color=Red size=Small");
+			setTool("multipoint");
+			run("Set Measurements...", "  redirect=None decimal=5");
+			run("Clear Results");
+			run("Measure");
+		}
+	 }
+	
+	setTool("multipoint");
+	Dialog.createNonBlocking("Cleanup points");
+	Dialog.addMessage("Click to add a point or Ctrl+Click to remove a point. \nWhen done, press \"OK\".");
+	Dialog.show();
+	
+	colonyno = getValue("selection.size");
+
+	print(samplename + " " + dilution + ", " + colonyno); 
+	dilution += 1;
+	close("Results");
+	selectImage(id); 
+	close(); 
+}
+
+
+macro "Reset CoCo [r]" {
+	while (nImages>0) { 
+          selectImage(nImages); 
+          close(); 
+      	}
+	close("Results");
+	dilution = 1;
+}
